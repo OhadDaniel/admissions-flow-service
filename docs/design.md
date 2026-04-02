@@ -90,16 +90,60 @@ graph TD
 
 ## Extensibility
 
-### Add a Task
-- Implement `Task<T>`
-- Add to `TaskName`
-- Register in factory
+### Adding a New Task
 
-### Add a Step
-- Define in `FlowConfig`
+Adding a new task requires extending multiple layers of the system:
 
-### Modify Flow
-- Update `FlowConfig` only
+1. **Define a DTO**
+   - Create a request object representing the task input
+   - Add validation logic if needed
+
+2. **Implement the Task**
+   - Create a class implementing `Task<T>`
+   - Implement the `process` method with the business logic
+
+3. **Register the Task**
+   - Add a new value to the `TaskName` enum
+   - Register the task in the `TaskFactory`
+
+4. **Expose via API**
+   - Add an endpoint in the controller (or use the generic task execution endpoint)
+
+5. **Attach to Flow**
+   - Add the task to the appropriate step in the flow definition
+
+This design ensures that tasks remain modular while being fully integrated into the system's flow and API.
+
+### Adding a New Step
+
+Adding a new step requires defining it within the flow configuration and associating it with its tasks:
+
+1. **Define the Step**
+   - Create a new step with a unique `StepName`
+   - Assign an ordered list of tasks that belong to the step
+
+2. **Update the Flow Definition**
+   - Add the new step to the flow sequence in `FlowConfig`
+   - Ensure the step is positioned correctly in the order
+
+3. **Attach Tasks**
+   - Each task must already be implemented and registered
+   - Tasks define the execution logic, while the step defines their grouping and order
+
+The flow execution logic remains unchanged, as it is fully driven by the configuration.
+
+### Modifying the Flow
+
+The flow structure can be modified by updating the configuration in `FlowConfig`:
+
+- Reorder steps to change the progression sequence
+- Add or remove steps
+- Adjust the tasks within each step
+
+Since the system's execution logic is driven entirely by the flow definition, 
+no changes are required in the core orchestration (Facade) or task implementations.
+
+This allows the system to evolve without introducing coupling or modifying existing logic.
 
 **Key Idea:** flow logic is configuration-driven, not hardcoded.
 
