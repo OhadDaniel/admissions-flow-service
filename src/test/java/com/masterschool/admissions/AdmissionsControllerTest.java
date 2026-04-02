@@ -1,5 +1,6 @@
 package com.masterschool.admissions;
 
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.masterschool.admissions.builder.AdmissionsSystemBuilder;
 import com.masterschool.admissions.controller.AdmissionsController;
 import com.masterschool.admissions.controller.TaskController;
@@ -7,12 +8,12 @@ import com.masterschool.admissions.domain.UserStatus;
 import com.masterschool.admissions.dto.*;
 import com.masterschool.admissions.exception.UserNotFoundException;
 import com.masterschool.admissions.facade.AdmissionsFacade;
-import com.masterschool.admissions.flow.FlowDefinition;
-import com.masterschool.admissions.repository.InMemoryUserProgressRepository;
-import com.masterschool.admissions.task.TaskFactory;
+import com.masterschool.admissions.flow.StepName;
 import com.masterschool.admissions.task.TaskName;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.masterschool.admissions.service.TaskRequestMapper;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +28,8 @@ class AdmissionsControllerTest {
     private AdmissionsFacade facade;
     private AdmissionsController admissionsController;
     private TaskController taskController;
+    private ObjectMapper objectMapper;
+    private TaskRequestMapper taskRequestMapper;
 
     /**
      * Initializes the system using the production-like builder.
@@ -34,14 +37,15 @@ class AdmissionsControllerTest {
      */
     @BeforeEach
     void setUp() {
-
         facade = AdmissionsSystemBuilder.build();
 
-        // חשוב: controller עדיין צריך flow
-        FlowDefinition flow = facade.getFlow(); // 👈 תוסיף getter אם אין
+        admissionsController = new AdmissionsController(facade);
 
-        admissionsController = new AdmissionsController(facade, flow);
-        taskController = new TaskController(facade);
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+
+        taskRequestMapper = new TaskRequestMapper(objectMapper);
+        taskController = new TaskController(facade, taskRequestMapper);
     }
 
     // ======================
@@ -82,7 +86,7 @@ class AdmissionsControllerTest {
 
         String userId = admissionsController.createUser("test@mail.com");
 
-        taskController.personalDetails(userId, validPersonal());
+        completeTask(userId, StepName.PERSONAL_DETAILS, TaskName.PERSONAL_DETAILS, validPersonal());
 
         CurrentStateResponse response = admissionsController.getCurrentState(userId);
 
@@ -157,14 +161,14 @@ class AdmissionsControllerTest {
      * Executes the full flow for a user.
      */
     private void completeFullFlow(String userId) {
-        taskController.personalDetails(userId, validPersonal());
-        taskController.iqTest(userId, validIQ(90));
-        taskController.scheduleInterview(userId, validSchedule());
-        taskController.performInterview(userId, passedInterview());
-        taskController.uploadIdentification(userId, validUpload());
-        taskController.signContract(userId, validSign());
-        taskController.payment(userId, validPayment());
-        taskController.joinSlack(userId, validSlack());
+        completeTask(userId, StepName.PERSONAL_DETAILS, TaskName.PERSONAL_DETAILS, validPersonal());
+        completeTask(userId, StepName.IQ_TEST, TaskName.IQ_TEST, validIQ(90));
+        completeTask(userId, StepName.INTERVIEW, TaskName.SCHEDULE_INTERVIEW, validSchedule());
+        completeTask(userId, StepName.INTERVIEW, TaskName.PERFORM_INTERVIEW, passedInterview());
+        completeTask(userId, StepName.SIGN_CONTRACT, TaskName.UPLOAD_IDENTIFICATION, validUpload());
+        completeTask(userId, StepName.SIGN_CONTRACT, TaskName.SIGN_CONTRACT, validSign());
+        completeTask(userId, StepName.PAYMENT, TaskName.PAYMENT, validPayment());
+        completeTask(userId, StepName.JOIN_SLACK, TaskName.JOIN_SLACK, validSlack());
     }
 
     private PersonalDetailsRequest validPersonal() {
@@ -201,5 +205,12 @@ class AdmissionsControllerTest {
 
     private JoinSlackRequest validSlack() {
         return new JoinSlackRequest("test@mail.com", java.time.Instant.now());
+    }
+
+    private void completeTask(String userId, StepName stepName, TaskName taskName, Object payload) {
+        CompleteTaskRequest request =
+                new CompleteTaskRequest(stepName, objectMapper.valueToTree(payload));
+
+        taskController.completeTask(userId, taskName, request);
     }
 }

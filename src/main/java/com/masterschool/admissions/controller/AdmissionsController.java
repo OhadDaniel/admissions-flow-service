@@ -5,8 +5,7 @@ import com.masterschool.admissions.domain.UserStatus;
 import com.masterschool.admissions.dto.CurrentStateResponse;
 import com.masterschool.admissions.dto.FlowResponse;
 import com.masterschool.admissions.facade.AdmissionsFacade;
-import com.masterschool.admissions.flow.FlowDefinition;
-import com.masterschool.admissions.flow.Step;
+import com.masterschool.admissions.runtime.RuntimeStep;
 import com.masterschool.admissions.flow.StepName;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -29,7 +28,7 @@ import java.util.List;
 public class AdmissionsController {
 
     private final AdmissionsFacade facade;
-    private final FlowDefinition flow;
+
 
     /**
      * Creates a new user and returns a unique identifier.
@@ -57,7 +56,7 @@ public class AdmissionsController {
     public FlowResponse getUserFlow(@PathVariable String userId) {
 
         UserProgress progress = facade.getProgress(userId);
-        List<Step> steps = flow.getSteps();
+        List<RuntimeStep> steps = progress.getUserFlow().getSteps();
 
         StepName currentStepName = progress.getCurrentStep();
 
@@ -94,8 +93,17 @@ public class AdmissionsController {
             return new CurrentStateResponse(null, null);
         }
 
+        RuntimeStep currentStep = null;
+
+        for (RuntimeStep step : progress.getUserFlow().getSteps()) {
+            if (step.getName() == progress.getCurrentStep()) {
+                currentStep = step;
+                break;
+            }
+        }
+
         return new CurrentStateResponse(
-                flow.getStep(progress.getCurrentStep()),
+                currentStep,
                 progress.getCurrentTask() != null
                         ? progress.getCurrentTask().name()
                         : null

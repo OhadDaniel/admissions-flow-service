@@ -1,8 +1,10 @@
 package com.masterschool.admissions.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.masterschool.admissions.builder.AdmissionsSystemBuilder;
 import com.masterschool.admissions.facade.AdmissionsFacade;
-import com.masterschool.admissions.flow.FlowDefinition;
+
+import com.masterschool.admissions.service.TaskRequestMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,8 +22,9 @@ public class AppConfig {
         return AdmissionsSystemBuilder.build();
     }
 
+
     @Bean
-    public FlowDefinition flowDefinition(AdmissionsFacade facade) {
-        return facade.getFlow();
+    public TaskRequestMapper taskRequestMapper(ObjectMapper objectMapper) {
+        return new TaskRequestMapper(objectMapper);
     }
 }

@@ -70,7 +70,7 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS, TaskName.PERSONAL_DETAILS, validPersonal());
 
         assertEquals(
                 StepName.IQ_TEST,
@@ -90,7 +90,7 @@ public class AdmissionsFacadeTest {
 
         assertThrows(
                 InvalidTaskOrderException.class,
-                () -> facade.handleTask(userId, TaskName.PERFORM_INTERVIEW, passedInterview())
+                () -> facade.handleTask(userId,StepName.INTERVIEW,TaskName.PERFORM_INTERVIEW, passedInterview())
         );
     }
 
@@ -102,8 +102,8 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
-        facade.handleTask(userId, TaskName.IQ_TEST, validIQ(50));
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS ,TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.IQ_TEST,TaskName.IQ_TEST, validIQ(50));
 
         assertEquals(
                 UserStatus.REJECTED,
@@ -141,7 +141,7 @@ public class AdmissionsFacadeTest {
 
         assertThrows(
                 TaskNotAllowedException.class,
-                () -> facade.handleTask(userId, TaskName.IQ_TEST, validIQ(90))
+                () -> facade.handleTask(userId,StepName.IQ_TEST ,TaskName.IQ_TEST, validIQ(90))
         );
     }
 
@@ -153,12 +153,12 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
-        facade.handleTask(userId, TaskName.IQ_TEST, validIQ(50));
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS ,TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.IQ_TEST,TaskName.IQ_TEST, validIQ(50));
 
         assertThrows(
                 IllegalStateException.class,
-                () -> facade.handleTask(userId, TaskName.SCHEDULE_INTERVIEW, validSchedule())
+                () -> facade.handleTask(userId,StepName.INTERVIEW ,TaskName.SCHEDULE_INTERVIEW, validSchedule())
         );
     }
 
@@ -174,7 +174,7 @@ public class AdmissionsFacadeTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal())
+                () -> facade.handleTask(userId,StepName.PERSONAL_DETAILS ,TaskName.PERSONAL_DETAILS, validPersonal())
         );
     }
 
@@ -186,11 +186,11 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS ,TaskName.PERSONAL_DETAILS, validPersonal());
 
         assertThrows(
                 TaskNotAllowedException.class,
-                () -> facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal())
+                () -> facade.handleTask(userId,StepName.PERSONAL_DETAILS  ,TaskName.PERSONAL_DETAILS, validPersonal())
         );
     }
 
@@ -202,7 +202,7 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");;
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS  ,TaskName.PERSONAL_DETAILS, validPersonal());
 
         assertFalse(facade.getProgress(userId).getTasks().isEmpty());
     }
@@ -216,7 +216,7 @@ public class AdmissionsFacadeTest {
         String user1 = facade.createUser("test1@mail.com");
         String user2 = facade.createUser("test2@mail.com");
 
-        facade.handleTask(user1, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(user1,StepName.PERSONAL_DETAILS  ,TaskName.PERSONAL_DETAILS, validPersonal());
 
         assertNotNull(facade.getProgress(user1).getCurrentStep());
         assertNull(facade.getProgress(user2).getCurrentStep());
@@ -230,7 +230,7 @@ public class AdmissionsFacadeTest {
 
         String userId = facade.createUser("test@mail.com");
 
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS  ,TaskName.PERSONAL_DETAILS, validPersonal());
 
         assertEquals(
                 UserStatus.IN_PROGRESS,
@@ -248,14 +248,14 @@ public class AdmissionsFacadeTest {
 
         advanceToInterviewStep(userId);
 
-        facade.handleTask(userId, TaskName.SCHEDULE_INTERVIEW, validSchedule());
+        facade.handleTask(userId,StepName.INTERVIEW ,TaskName.SCHEDULE_INTERVIEW, validSchedule());
 
         assertEquals(
                 StepName.INTERVIEW,
                 facade.getProgress(userId).getCurrentStep()
         );
 
-        facade.handleTask(userId, TaskName.PERFORM_INTERVIEW, passedInterview());
+        facade.handleTask(userId,StepName.INTERVIEW ,TaskName.PERFORM_INTERVIEW, passedInterview());
 
         assertNotEquals(
                 StepName.INTERVIEW,
@@ -268,19 +268,19 @@ public class AdmissionsFacadeTest {
     // ======================
 
     private void advanceToInterviewStep(String userId) {
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
-        facade.handleTask(userId, TaskName.IQ_TEST, validIQ(80));
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS ,TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.IQ_TEST, TaskName.IQ_TEST, validIQ(80));
     }
 
     private void completeFullFlow(String userId) {
-        facade.handleTask(userId, TaskName.PERSONAL_DETAILS, validPersonal());
-        facade.handleTask(userId, TaskName.IQ_TEST, validIQ(90));
-        facade.handleTask(userId, TaskName.SCHEDULE_INTERVIEW, validSchedule());
-        facade.handleTask(userId, TaskName.PERFORM_INTERVIEW, passedInterview());
-        facade.handleTask(userId, TaskName.UPLOAD_IDENTIFICATION, validUpload());
-        facade.handleTask(userId, TaskName.SIGN_CONTRACT, validSign());
-        facade.handleTask(userId, TaskName.PAYMENT, validPayment());
-        facade.handleTask(userId, TaskName.JOIN_SLACK, validSlack());
+        facade.handleTask(userId,StepName.PERSONAL_DETAILS, TaskName.PERSONAL_DETAILS, validPersonal());
+        facade.handleTask(userId,StepName.IQ_TEST, TaskName.IQ_TEST, validIQ(90));
+        facade.handleTask(userId,StepName.INTERVIEW, TaskName.SCHEDULE_INTERVIEW, validSchedule());
+        facade.handleTask(userId,StepName.INTERVIEW, TaskName.PERFORM_INTERVIEW, passedInterview());
+        facade.handleTask(userId,StepName.SIGN_CONTRACT, TaskName.UPLOAD_IDENTIFICATION, validUpload());
+        facade.handleTask(userId,StepName.SIGN_CONTRACT, TaskName.SIGN_CONTRACT, validSign());
+        facade.handleTask(userId,StepName.PAYMENT, TaskName.PAYMENT, validPayment());
+        facade.handleTask(userId,StepName.JOIN_SLACK, TaskName.JOIN_SLACK, validSlack());
     }
 
     private PersonalDetailsRequest validPersonal() {

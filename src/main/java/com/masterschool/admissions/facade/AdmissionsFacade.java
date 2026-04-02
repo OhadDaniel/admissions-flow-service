@@ -1,12 +1,17 @@
 package com.masterschool.admissions.facade;
 
-import com.masterschool.admissions.domain.*;
+import com.masterschool.admissions.domain.TaskInstance;
+import com.masterschool.admissions.domain.TaskStatus;
+import com.masterschool.admissions.domain.UserProgress;
+import com.masterschool.admissions.domain.UserStatus;
 import com.masterschool.admissions.exception.InvalidTaskOrderException;
 import com.masterschool.admissions.exception.TaskNotAllowedException;
 import com.masterschool.admissions.exception.UserNotFoundException;
-import com.masterschool.admissions.flow.FlowDefinition;
-import com.masterschool.admissions.flow.Step;
+import com.masterschool.admissions.flow.FlowConfig;
+import com.masterschool.admissions.flow.StepName;
 import com.masterschool.admissions.repository.UserProgressRepository;
+import com.masterschool.admissions.runtime.RuntimeStep;
+import com.masterschool.admissions.runtime.UserFlow;
 import com.masterschool.admissions.task.Task;
 import com.masterschool.admissions.task.TaskFactory;
 import com.masterschool.admissions.task.TaskName;
@@ -15,89 +20,67 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Facade responsible for orchestrating the admissions flow execution.
- *.
- * This class acts as the main entry point for processing user actions.
- * It coordinates between:
- * - Repository (for loading and saving user state)
- * - FlowDefinition (for determining progression)
- * - TaskFactory (for resolving task implementations)
- *.
+ * Main orchestration layer for the admissions process.
+ *
  * Responsibilities:
- * - Load or initialize user progress
- * - Execute the requested task
- * - Validate task belongs to current step
- * - Update user progression (next step / accepted / rejected)
- * - Persist the updated state
- *.
- * Note:
- * - Does not contain business logic of tasks
- * - Does not define the flow itself
+ * - Load and persist user progress
+ * - Validate task execution against the user's current runtime flow
+ * - Execute task logic through the task factory
+ * - Advance, accept, or reject the user based on task results
+ *
+ * Notes:
+ * - Task-specific business rules remain inside task implementations
+ * - Each user owns a personal runtime flow (UserFlow)
  */
-
 public class AdmissionsFacade {
 
     private final UserProgressRepository repository;
-    private final FlowDefinition flow;
     private final TaskFactory taskFactory;
 
-    public AdmissionsFacade(UserProgressRepository repository, FlowDefinition flow, TaskFactory taskFactory){
+    public AdmissionsFacade(UserProgressRepository repository,TaskFactory taskFactory) {
         this.repository = repository;
-        this.flow = flow;
         this.taskFactory = taskFactory;
     }
 
     /**
-     * Executes a task for a given user within the admissions flow.
-     *.
-     * The method performs the following steps:
-     * 1. Retrieves or initializes the user's progress
-     * 2. Resolves the task using TaskFactory
-     * 3. Validates that the task belongs to the current step
-     * 4. Executes the task logic
-     * 5. Records the result of the execution
-     * 6. Updates the user's progression:
-     *    - FAILED → user is rejected and flow stops
-     *    - PASSED → user advances to next step or is accepted if flow is complete
-     * 7. Persists the updated user state
-     *.
-     * @param userId   the unique identifier of the user
-     * @param taskName the task to execute
-     * @param request  the input DTO required by the task
-     * @param <T>      the type of the request object
-     * @return the result of the task execution (PASSED / FAILED)
-     *.
-     * @throws IllegalStateException if the task does not belong to the current step
-     * @throws IllegalArgumentException if the task is not registered in the factory
+     * Executes a task for a user inside the user's current runtime flow.
+     *
+     * @param userId   unique user identifier
+     * @param stepName step the client expects the task to belong to
+     * @param taskName task to execute
+     * @param request  task payload DTO
+     * @param <T>      payload type
+     * @return task execution result
      */
-    public <T> TaskStatus handleTask(String userId, TaskName taskName, T request) {
+    public <T> TaskStatus handleTask(String userId, StepName stepName, TaskName taskName, T request) {
 
-        // 1. Load user state
-        UserProgress progress = repository
-                .findByUserId(userId)
+        UserProgress progress = repository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
-        //Guard: flow already completed
+
         if (progress.getStatus() == UserStatus.REJECTED ||
                 progress.getStatus() == UserStatus.ACCEPTED) {
             throw new IllegalStateException("User flow already completed");
         }
-        // Initialize first step if needed
+
         if (progress.getCurrentStep() == null) {
-            progress.advance(flow.getFirstStep().getName(), null);
+            RuntimeStep firstStep = progress.getUserFlow().getStep(0);
+            progress.advance(firstStep.getName(), null);
         }
 
-        // 2. Resolve task from factory
-        Task<T> task = taskFactory.get(taskName);
+        if (progress.getCurrentStep() != stepName) {
+            throw new TaskNotAllowedException("Task does not belong to the current step");
+        }
 
-        // 3. Validate task belongs to current step
-        Step currentStep = flow.getStep(progress.getCurrentStep());
+        Task<T> task = taskFactory.get(taskName);
+        RuntimeStep currentStep = getCurrentRuntimeStep(progress);
 
         boolean taskExists = currentStep.getTasks().stream()
-                .anyMatch(t -> t.getName().equals(task.getName()));
+                .anyMatch(name -> name == task.getName());
 
         if (!taskExists) {
             throw new TaskNotAllowedException("Task does not belong to current step");
         }
+
         if (progress.getTasks().containsKey(task.getName())) {
             throw new TaskNotAllowedException("Task already executed");
         }
@@ -106,102 +89,129 @@ public class AdmissionsFacade {
             throw new InvalidTaskOrderException("Previous tasks must be completed first");
         }
 
-
-        // 4. Execute task
         TaskStatus status = task.process(request);
 
-        // 5. Record result
         progress.addTaskInstance(
                 new TaskInstance(task.getName(), status, request, Instant.now())
         );
 
-        // 6. Advance flow only if step is fully completed
         updateProgress(progress, currentStep, status);
 
-        // 7. Persist state
         repository.save(progress);
         return status;
     }
 
     /**
-     * Validates that all tasks preceding the current task in the step
-     * have been successfully completed.
-     *.
-     * Enforces execution order within a step.
-     *.
-     * @return true if all previous tasks are PASSED, false otherwise
+     * Ensures all tasks before the current task inside the same step
+     * were already completed successfully.
      */
-    private boolean isPreviousTasksCompleted(UserProgress progress, Step step, Task<?> currentTask) {
+    private boolean isPreviousTasksCompleted(UserProgress progress,
+                                             RuntimeStep step,
+                                             Task<?> currentTask) {
 
-        for (Task<?> task : step.getTasks()) {
+        for (TaskName taskName : step.getTasks()) {
+            if (taskName == currentTask.getName()) {
+                return true;
+            }
 
-            if (task.getName().equals(currentTask.getName())) return true;
-
-            TaskInstance instance = progress.getTasks().get(task.getName());
-
-            if (instance == null || instance.getStatus() != TaskStatus.PASSED) return false;
-        }
-        return true;
-    }
-
-    /**
-     * Checks whether all tasks in the given step have been completed successfully.
-     *.
-     * A step is considered complete only if every task has a PASSED status.
-     *.
-     * @return true if the step is fully completed, false otherwise
-     */
-    private boolean isStepCompleted(UserProgress progress, Step step) {
-
-        for (Task<?> task : step.getTasks()) {
-
-            TaskInstance instance = progress.getTasks().get(task.getName());
-
+            TaskInstance instance = progress.getTasks().get(taskName);
             if (instance == null || instance.getStatus() != TaskStatus.PASSED) {
                 return false;
             }
         }
-
         return true;
     }
 
+    /**
+     * A step is complete only when all its tasks passed.
+     */
+    private boolean isStepCompleted(UserProgress progress, RuntimeStep step) {
+        for (TaskName taskName : step.getTasks()) {
+            TaskInstance instance = progress.getTasks().get(taskName);
+            if (instance == null || instance.getStatus() != TaskStatus.PASSED) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     /**
-     * Updates the user's progression in the flow based on the task result.
-     *.
-     * - FAILED → marks user as rejected and stops the flow
-     * - PASSED → advances to the next step if current step is complete,
-     *            otherwise remains in the same step
-     * - If no next step exists → marks user as accepted
+     * Advances the user to the next runtime step, accepts them,
+     * or rejects them if the task failed.
      */
-    private void updateProgress(UserProgress progress, Step currentStep, TaskStatus status) {
-
+    private void updateProgress(UserProgress progress, RuntimeStep currentStep, TaskStatus status) {
         if (status == TaskStatus.FAILED) {
             progress.markRejected();
             return;
         }
 
         if (isStepCompleted(progress, currentStep)) {
-            flow.getNextStep(currentStep.getName())
-                    .ifPresentOrElse(
-                            step -> progress.advance(step.getName(), null),
-                            progress::markAccepted
-                    );
+            int currentIndex = getCurrentStepIndex(progress);
+
+            if (currentIndex + 1 < progress.getUserFlow().size()) {
+                RuntimeStep nextStep = progress.getUserFlow().getStep(currentIndex + 1);
+                progress.advance(nextStep.getName(), null);
+            } else {
+                progress.markAccepted();
+            }
         }
     }
 
-    public UserProgress getProgress(String userId) {
-        return repository.findByUserId(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found" + userId));
+    /**
+     * Returns the runtime step matching the user's current step.
+     */
+    private RuntimeStep getCurrentRuntimeStep(UserProgress progress) {
+        for (RuntimeStep step : progress.getUserFlow().getSteps()) {
+            if (step.getName() == progress.getCurrentStep()) {
+                return step;
+            }
+        }
+        throw new IllegalStateException("Current step not found in user flow");
     }
 
+    /**
+     * Returns the index of the user's current step in the runtime flow.
+     */
+    private int getCurrentStepIndex(UserProgress progress) {
+        for (int i = 0; i < progress.getUserFlow().getSteps().size(); i++) {
+            if (progress.getUserFlow().getSteps().get(i).getName() == progress.getCurrentStep()) {
+                return i;
+            }
+        }
+        throw new IllegalStateException("Current step index not found in user flow");
+    }
+
+    /**
+     * Returns the persisted progress of the requested user.
+     *
+     * @param userId unique user identifier
+     * @return the current progress state of the user
+     *
+     * @throws UserNotFoundException if no user exists for the given identifier
+     */
+    public UserProgress getProgress(String userId) {
+        return repository.findByUserId(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+    }
+
+    /**
+     * Creates a new user and initializes a personal runtime admissions flow for them.
+     *
+     * The user starts with:
+     * - a unique generated identifier
+     * - the provided email
+     * - a fresh {@link UserFlow} created from the current flow configuration
+     * - initial status of IN_PROGRESS
+     *
+     * @param email user email
+     * @return the unique identifier of the newly created user
+     */
     public String createUser(String email) {
         String userId = UUID.randomUUID().toString();
-        repository.save(new UserProgress(userId));
+        UserFlow userFlow = FlowConfig.createUserFlow();
+        repository.save(new UserProgress(userId, email, userFlow));
         return userId;
     }
 
-    public FlowDefinition getFlow() {
-        return flow;
-    }
+
 }

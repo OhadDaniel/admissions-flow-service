@@ -1,6 +1,6 @@
 package com.masterschool.admissions.domain;
 
-import lombok.Getter;
+
 
 /**
  * Represents a system user.

@@ -1,105 +1,66 @@
 package com.masterschool.admissions.controller;
 
-import com.masterschool.admissions.domain.TaskStatus;
-import com.masterschool.admissions.dto.*;
+import com.masterschool.admissions.dto.CompleteTaskRequest;
 import com.masterschool.admissions.facade.AdmissionsFacade;
+import com.masterschool.admissions.service.TaskRequestMapper;
 import com.masterschool.admissions.task.TaskName;
-import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Controller responsible for executing tasks in the admissions flow.
- *.
- * Each endpoint represents a specific task.
+ * REST controller responsible for completing admissions tasks.
+ *
+ * This controller exposes a single generic endpoint for all task types.
+ * It delegates:
+ * - payload conversion to {@link TaskRequestMapper}
+ * - business orchestration to {@link AdmissionsFacade}
+ *
+ * Using one generic endpoint keeps the external API stable and avoids
+ * creating a separate controller method for every task in the system.
  */
 @RestController
 @RequestMapping("/admissions/users/{userId}")
-@RequiredArgsConstructor
 public class TaskController {
 
-    private final AdmissionsFacade facade;
+    private final AdmissionsFacade admissionsFacade;
+    private final TaskRequestMapper taskRequestMapper;
 
-    @PutMapping("/{userId}/personal-details")
-    public TaskResponse personalDetails(
-            @PathVariable String userId,
-            @RequestBody PersonalDetailsRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.PERSONAL_DETAILS, request);
-        return new TaskResponse(status);
+    /**
+     * Creates the task controller.
+     *
+     * @param admissionsFacade main admissions orchestration layer
+     * @param taskRequestMapper maps raw JSON payloads into typed DTOs
+     */
+    public TaskController(AdmissionsFacade admissionsFacade,
+                          TaskRequestMapper taskRequestMapper) {
+        this.admissionsFacade = admissionsFacade;
+        this.taskRequestMapper = taskRequestMapper;
     }
 
-    @PutMapping("/{userId}/iq-test")
-    public TaskResponse iqTest(
-            @PathVariable String userId,
-            @RequestBody IQRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.IQ_TEST, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/schedule-interview")
-    public TaskResponse scheduleInterview(
-            @PathVariable String userId,
-            @RequestBody ScheduleInterviewRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.SCHEDULE_INTERVIEW, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/perform-interview")
-    public TaskResponse performInterview(
-            @PathVariable String userId,
-            @RequestBody PerformInterviewRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.PERFORM_INTERVIEW, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/upload-identification")
-    public TaskResponse uploadIdentification(
-            @PathVariable String userId,
-            @RequestBody UploadIdentificationRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.UPLOAD_IDENTIFICATION, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/sign-contract")
-    public TaskResponse signContract(
-            @PathVariable String userId,
-            @RequestBody SignContractRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.SIGN_CONTRACT, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/payment")
-    public TaskResponse payment(
-            @PathVariable String userId,
-            @RequestBody PaymentRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.PAYMENT, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/join-slack")
-    public TaskResponse joinSlack(
-            @PathVariable String userId,
-            @RequestBody JoinSlackRequest request
-    ) {
-        TaskStatus status = facade.handleTask(userId, TaskName.JOIN_SLACK, request);
-        return new TaskResponse(status);
-    }
-
-    @PutMapping("/{userId}/tasks/{taskName}")
-    public TaskResponse executeTask(
+    /**
+     * Completes a task for the given user.
+     *
+     * The endpoint is generic:
+     * - the task type is provided in the path
+     * - the request body contains the step name and raw payload
+     *
+     * The raw payload is converted into the correct DTO using
+     * {@link TaskRequestMapper}, then passed to {@link AdmissionsFacade}
+     * for validation and execution.
+     *
+     * @param userId user identifier
+     * @param taskName task to execute
+     * @param request wrapper containing step name and raw payload
+     * @return HTTP 200 if the task was processed successfully
+     */
+    @PutMapping("/tasks/{taskName}")
+    public ResponseEntity<Void> completeTask(
             @PathVariable String userId,
             @PathVariable TaskName taskName,
-            @RequestBody Object request
+            @RequestBody CompleteTaskRequest request
     ) {
-
-        TaskStatus status = facade.handleTask(userId, taskName, request);
-
-        return new TaskResponse(status);
+        Object typedRequest = taskRequestMapper.map(taskName, request.getPayload());
+        admissionsFacade.handleTask(userId, request.getStepName(), taskName, typedRequest);
+        return ResponseEntity.ok().build();
     }
 }

@@ -1,5 +1,5 @@
 package com.masterschool.admissions.domain;
-
+import com.masterschool.admissions.runtime.UserFlow;
 import com.masterschool.admissions.flow.StepName;
 import com.masterschool.admissions.task.TaskName;
 import lombok.Getter;
@@ -22,6 +22,8 @@ import java.util.Map;
 public class UserProgress {
 
     private final String userId;
+    private final String email;
+    private final UserFlow userFlow;
 
     private StepName currentStep;
     private TaskName currentTask;
@@ -29,8 +31,10 @@ public class UserProgress {
 
     private final  Map<TaskName, TaskInstance> tasks;
 
-    public UserProgress(String userId) {
+    public UserProgress(String userId, String email, UserFlow userFlow) {
         this.userId = userId;
+        this.email = email;
+        this.userFlow = userFlow;
         this.status = UserStatus.IN_PROGRESS;
         this.tasks = new HashMap<>();
     }

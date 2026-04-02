@@ -1,11 +1,11 @@
 package com.masterschool.admissions.dto;
 
-import com.masterschool.admissions.flow.Step;
+import com.masterschool.admissions.runtime.RuntimeStep;
 
 /**
  * Represents the user's current position in the admissions flow.
  */
 public record CurrentStateResponse(
-        Step step,
+        RuntimeStep step,
         String currentTask
 ) {}

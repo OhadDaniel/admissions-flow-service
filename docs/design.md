@@ -2,94 +2,236 @@
 
 ## Introduction
 
-This document describes the design and architecture of the Admissions Flow system, focusing on its structure, key design decisions, and extensibility.
+This document describes the architecture and design decisions behind the Admissions Flow Service.
+
+The goal of the system is to model a multi-step admissions process in a way that is:
+- easy to understand
+- safe to evolve
+- strict about execution rules
+- flexible enough to support future product changes
+
+The service is intentionally focused on backend flow execution logic. It does not include a frontend or persistent database layer.
 
 ---
 
-## Overview
+## Problem Framing
 
-The system models an admissions process as a sequence of steps, where each step contains one or more tasks.
+The admissions process is not a single action. It is a sequence of steps, and some steps contain multiple ordered tasks.
 
-Each user progresses independently, with their state updated based on task results. The system enforces correct execution order and ensures deterministic behavior.
+Examples:
+- a user must complete **Personal Details** before **IQ Test**
+- the **Interview** step contains both **Schedule Interview** and **Perform Interview**
+- some tasks are simple completion events
+- some tasks decide pass/fail based on payload data
+
+In addition, the assignment emphasizes future product changes. That means the design should not assume that all users always follow one rigid static path forever.
+
+This led to one of the main design choices in the project: separating the **runtime flow assigned to a user** from any static configuration used to build it.
 
 ---
 
 ## High-Level Architecture
 
-The system follows a layered architecture:
+The system is organized into a small set of focused layers:
 
-- **Controller** – handles HTTP requests
-- **Facade** – orchestrates flow execution
-- **Flow Definition** – defines steps and order
-- **Task Layer** – encapsulates business logic
-- **Repository** – stores user state
-- **Builder** – initializes and wires system components
+- **controller** – REST endpoints
+- **facade** – orchestration and flow progression
+- **runtime** – user-specific runtime flow model
+- **task** – task implementations and task resolution
+- **domain** – user progress and task execution state
+- **repository** – persistence abstraction and in-memory implementation
+- **dto** – request and response models
+- **config / builder** – application wiring
 
-### Flow of Execution
+At a high level, the execution path is:
 
-1. Controller receives request
-2. Delegates to `AdmissionsFacade`
-3. Facade resolves task via `TaskFactory`
-4. Task executes and returns result
-5. Facade updates and persists user state
+1. a controller receives an HTTP request
+2. the request is mapped into a typed DTO
+3. the facade loads the user state
+4. the facade validates whether the task is allowed
+5. the task is resolved and executed
+6. the user state is updated and persisted
+7. the updated flow state is exposed back through the API
 
 ```mermaid
 graph TD
-    Controller --> Facade
-    Facade --> FlowDefinition
-    Facade --> TaskFactory
+    Client --> Controller
+    Controller --> TaskRequestMapper
+    Controller --> AdmissionsFacade
+    AdmissionsFacade --> UserProgressRepository
+    AdmissionsFacade --> TaskFactory
     TaskFactory --> Tasks
-    Facade --> Repository
+    AdmissionsFacade --> UserProgress
+    UserProgress --> UserFlow
+    UserFlow --> RuntimeStep
 ```
 
 ---
 
-## Core Design Principles
+## Core Runtime Model
 
-- **Separation of Concerns**  
-  Each layer has a single responsibility
+### 1. UserProgress
 
-- **Extensibility**  
-  New tasks and steps can be added with minimal changes
+`UserProgress` is the central domain object for a user.
 
-- **Type Safety**  
-  Enums (`TaskName`, `StepName`) replace strings
+It stores:
+- user identity
+- email
+- current step
+- current task
+- overall status
+- executed task instances
+- the user's personal `UserFlow`
 
-- **Fail-Fast Validation**  
-  Invalid inputs are rejected early (DTO level)
+This object represents the current truth of where the user stands in the admissions process.
 
-- **Explicit Flow Control**  
-  Task order and progression are strictly enforced
+### 2. UserFlow
+
+`UserFlow` represents the runtime flow assigned to a specific user.
+
+It contains an ordered list of `RuntimeStep` objects and acts as the source of truth for:
+- which steps the user has
+- in what order they appear
+- what future changes may be injected for that specific user
+
+This is a key architectural choice. Instead of driving all users through one shared global flow object, each user gets a runtime flow built from configuration.
+
+### 3. RuntimeStep
+
+`RuntimeStep` represents a single step inside a user's runtime flow.
+
+It contains:
+- a `StepName`
+- an ordered list of `TaskName`s
+- a `visibleInProgressBar` flag
+
+The visibility flag was introduced to support product-driven scenarios where a step may exist for some users without necessarily appearing in the main progress UI for all users.
 
 ---
 
-## Flow Design
+## Flow Execution Logic
 
-- A **Step** contains ordered tasks
-- A **Task** processes input and returns `PASSED` / `FAILED`
-- A step completes only when all tasks pass
+The orchestration logic lives in `AdmissionsFacade`.
 
-### Execution Rules
+For every task completion request, the facade performs the following:
 
-- First task initializes the flow
-- Tasks must belong to the current step
-- Tasks must be executed in order
-- Failure → user is **REJECTED**
-- Completion → advance to next step
-- Final step → user is **ACCEPTED**
+1. load the user from the repository
+2. reject execution if the flow is already completed
+3. initialize the first step if the user has not started yet
+4. verify that the request step matches the user's current runtime step
+5. verify that the requested task belongs to that step
+6. verify that previous tasks in the same step were already completed
+7. execute the task through the `TaskFactory`
+8. record the resulting `TaskInstance`
+9. either:
+  - reject the user if the task failed
+  - stay on the current step if the step is not complete yet
+  - advance to the next runtime step if the step is complete
+  - accept the user if the final step was completed
+
+This gives the system deterministic behavior and strict control over flow progression.
 
 ---
 
-## Design Patterns
+## Why a User-Specific Runtime Flow?
 
-- **Facade** – centralizes orchestration (`AdmissionsFacade`)
-- **Factory** – resolves tasks (`TaskFactory`)
-- **Strategy** – each task encapsulates its own logic
+A simpler solution would have been to keep one static ordered flow and let every user progress through it.
+
+That approach works for a basic implementation, but it becomes restrictive once product requirements change.
+
+For example, the assignment explicitly describes a case where a subset of users may need an additional step after IQ evaluation. In that kind of scenario, the system should be able to represent:
+
+- steps that exist only for some users
+- steps that may be inserted dynamically
+- steps that may be visible or hidden in the UI depending on the case
+
+Because of that, the design separates:
+
+- **configuration used to create a runtime flow**
+  from
+- **the runtime flow actually assigned to the user**
+
+This makes the system easier to evolve without pushing branching logic into every controller or task.
+
+---
+
+## API Design
+
+The API is intentionally split into two responsibilities:
+
+### AdmissionsController
+Handles user-facing admissions state:
+- create user
+- get full flow
+- get current state
+- get user status
+
+### TaskController
+Handles task execution through one generic endpoint:
+
+```http
+PUT /admissions/users/{userId}/tasks/{taskName}
+```
+
+Instead of exposing one endpoint per task, the controller accepts a generic request shape and delegates payload mapping to `TaskRequestMapper`.
+
+This improves extensibility:
+- adding a new task does not require adding a new controller endpoint
+- the external API remains consistent
+- task-specific parsing stays outside the facade
+
+---
+
+## Task Execution Model
+
+Each task encapsulates its own business rule and returns a `TaskStatus`.
+
+Examples:
+- `IQ_TEST` passes only if the score is above the threshold
+- `PERFORM_INTERVIEW` passes only if the decision is `passed_interview`
+- payment and similar tasks pass on successful completion payload
+
+Task implementations are resolved through `TaskFactory`, which keeps orchestration code independent from concrete task classes.
+
+This keeps responsibilities clean:
+- the facade decides **when** a task may run
+- the task itself decides **how** it is evaluated
+
+---
+
+## Validation Strategy
+
+Validation is handled close to the input boundary.
+
+Request DTOs validate their own required fields, using the `validations` package. This keeps invalid payloads from reaching business orchestration logic and helps the facade stay focused on flow control rather than low-level payload checks.
+
+The general validation split is:
+
+- **DTO layer** – shape and required field validation
+- **Facade layer** – flow legality and execution order validation
+- **Task layer** – task-specific business evaluation
+
+---
+
+## Main Design Patterns Used
+
+### Facade
+`AdmissionsFacade` is the central orchestration layer. It provides one focused entry point for admissions progression and hides coordination details from controllers.
+
+### Factory
+`TaskFactory` resolves task implementations by `TaskName`. This avoids hard-coding concrete task classes inside orchestration code.
+
+### Strategy
+Each task implementation behaves like a strategy: it receives a typed payload and decides whether that task passed or failed based on its own logic.
+
+### Composition Root
+`AdmissionsSystemBuilder` and `AppConfig` are responsible for wiring the system together. This keeps object creation separate from business behavior.
 
 ---
 
 ## Extensibility
 
+<<<<<<< HEAD
 ### Adding a New Task
 
 Adding a new task requires extending multiple layers of the system:
@@ -144,27 +286,76 @@ Since the system's execution logic is driven entirely by the flow definition,
 no changes are required in the core orchestration (Facade) or task implementations.
 
 This allows the system to evolve without introducing coupling or modifying existing logic.
+=======
+The design supports several kinds of future changes with limited impact:
 
-**Key Idea:** flow logic is configuration-driven, not hardcoded.
+### Add a New Task
+Usually requires:
+- adding a new `TaskName`
+- implementing a task class
+- registering it in the factory
+- adding request mapping in `TaskRequestMapper`
+- including it in the runtime flow configuration where relevant
+
+### Change Task Order Inside a Step
+Update the ordered task list in the runtime step configuration.
+>>>>>>> dfd7b0b (Refactor admissions flow and add per-user runtime flow)
+
+### Add or Remove a Step
+Update the runtime flow creation logic in `FlowConfig`.
+
+### Add Conditional or User-Specific Steps
+The current architecture already supports this at the model level because each user owns a `UserFlow`. A future change can insert or modify steps for a specific user without redesigning the system.
+
+This is one of the main reasons for introducing `UserFlow` and `RuntimeStep`.
 
 ---
 
 ## Tradeoffs
 
-- **In-Memory Storage**  
-  Simple and fast, but not persistent
+### In-Memory Repository
+The current repository implementation is intentionally in memory.
 
-- **DTO Validation**  
-  Clean and early validation, but less flexible
+Pros:
+- simple
+- fast to run
+- ideal for the assignment
 
-- **Enums for Tasks**  
-  Type-safe but requires code changes
+Cons:
+- no persistence across restarts
+- not production-ready for real deployment
 
-- **Centralized Facade**  
-  Clear control flow, but can grow in complexity
+### Explicit Runtime State
+The system stores execution state explicitly in `UserProgress`.
+
+Pros:
+- easy to reason about
+- easy to inspect in tests
+- deterministic progression
+
+Cons:
+- requires careful synchronization between task execution and flow updates
+
+### Enum-Based Task and Step Names
+Using `TaskName` and `StepName` improves type safety and avoids fragile string-based orchestration.
+
+Tradeoff:
+- adding new tasks still requires code changes rather than pure configuration
+
+Given the assignment scope, this was a reasonable balance between flexibility and clarity.
 
 ---
 
-## Conclusion
+## Testing Approach
 
-The system is designed to be simple, structured, and extensible, enabling safe evolution of the admissions process while maintaining clear and predictable behavior.
+The test suite focuses on the most important behavioral guarantees:
+
+- correct user creation
+- correct progression through the flow
+- enforcement of task order
+- rejection on failing tasks
+- prevention of duplicate task execution
+- correctness of controller responses
+
+This matches the nature of the system: the important thing is not just that the API exists, but that the flow rules are enforced consistently.
+
