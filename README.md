@@ -11,6 +11,38 @@ The system allows:
 - Tracking user status (IN_PROGRESS / ACCEPTED / REJECTED)
 
 ---
+## Project Structure
+
+The project is organized into clear layers, each with a single responsibility:
+
+- `controller/` – REST API endpoints (user actions and task execution)
+- `facade/` – orchestrates the admissions flow and enforces business rules
+- `flow/` – defines the structure and order of steps in the process
+- `task/` – individual task implementations (business logic)
+- `repository/` – in-memory storage of user progress
+- `dto/` – request and response objects
+- `validation/` – shared validation utilities
+- `builder/` – system initialization (wiring flow and tasks together)
+- `config/AppConfig` – central configuration class responsible for wiring core components (used in application setup and tests)
+
+---
+
+## Design Overview
+
+For a deeper understanding of the system architecture, design decisions, and extensibility:
+
+👉 See the full design document:  
+`docs/design.md`
+
+This document explains:
+- System architecture and flow
+- Design patterns used
+- How to extend the system (add tasks / steps)
+- Tradeoffs and design decisions
+
+Reading it is recommended to fully understand the system design.
+
+---
 
 ## Prerequisites
 
