@@ -48,6 +48,8 @@ public class TaskRequestMapper {
                     objectMapper.convertValue(payload, PersonalDetailsRequest.class);
             case IQ_TEST ->
                     objectMapper.convertValue(payload, IQRequest.class);
+            case SECOND_CHANCE_IQ_TEST ->
+                    objectMapper.convertValue(payload, SecondChanceIQRequest.class);
             case SCHEDULE_INTERVIEW ->
                     objectMapper.convertValue(payload, ScheduleInterviewRequest.class);
             case PERFORM_INTERVIEW ->
@@ -60,6 +62,7 @@ public class TaskRequestMapper {
                     objectMapper.convertValue(payload, PaymentRequest.class);
             case JOIN_SLACK ->
                     objectMapper.convertValue(payload, JoinSlackRequest.class);
+
         };
     }
 }

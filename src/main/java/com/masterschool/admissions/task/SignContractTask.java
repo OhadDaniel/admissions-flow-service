@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.SignContractRequest;
 public class SignContractTask implements Task<SignContractRequest> {
 
     @Override
-    public TaskStatus process(SignContractRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(SignContractRequest request) {
+        return  TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override

@@ -9,5 +9,6 @@ public enum StepName {
     INTERVIEW,
     SIGN_CONTRACT,
     PAYMENT,
-    JOIN_SLACK
+    JOIN_SLACK,
+
 }

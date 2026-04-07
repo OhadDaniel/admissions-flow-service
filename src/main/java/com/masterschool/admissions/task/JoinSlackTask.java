@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.JoinSlackRequest;
 public class JoinSlackTask implements Task<JoinSlackRequest> {
 
     @Override
-    public TaskStatus process(JoinSlackRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(JoinSlackRequest request) {
+        return  TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override

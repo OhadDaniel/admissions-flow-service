@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.UploadIdentificationRequest;
 public class UploadIdentificationTask implements Task<UploadIdentificationRequest> {
 
     @Override
-    public TaskStatus process(UploadIdentificationRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(UploadIdentificationRequest request) {
+        return TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override

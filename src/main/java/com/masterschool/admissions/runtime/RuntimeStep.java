@@ -3,6 +3,7 @@ package com.masterschool.admissions.runtime;
 import com.masterschool.admissions.flow.StepName;
 import com.masterschool.admissions.task.TaskName;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -33,7 +34,7 @@ public class RuntimeStep {
      */
     public RuntimeStep(StepName name, List<TaskName> tasks, boolean visibleInProgressBar) {
         this.name = name;
-        this.tasks = tasks;
+        this.tasks = new ArrayList<>(tasks);
         this.visibleInProgressBar = visibleInProgressBar;
     }
 
@@ -56,5 +57,9 @@ public class RuntimeStep {
      */
     public boolean isVisibleInProgressBar() {
         return visibleInProgressBar;
+    }
+
+    public void addTask(TaskName taskName) {
+        tasks.add(taskName);
     }
 }

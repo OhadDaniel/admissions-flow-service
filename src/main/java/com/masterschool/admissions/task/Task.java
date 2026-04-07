@@ -11,5 +11,5 @@ public interface Task<T> {
 
     TaskName getName();
 
-    TaskStatus process(T request);
+    TaskResult process(T request);
 }

@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.ScheduleInterviewRequest;
 public class ScheduleInterviewTask implements Task<ScheduleInterviewRequest> {
 
     @Override
-    public TaskStatus process(ScheduleInterviewRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(ScheduleInterviewRequest request) {
+        return TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override

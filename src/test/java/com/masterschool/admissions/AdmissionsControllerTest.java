@@ -14,6 +14,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.masterschool.admissions.service.TaskRequestMapper;
+import com.masterschool.admissions.domain.UserProgress;
+import com.masterschool.admissions.runtime.RuntimeStep;
+
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -153,6 +157,39 @@ class AdmissionsControllerTest {
         assertNull(response.currentTask());
     }
 
+    @Test
+    void iqMediumScore_shouldAddSecondChanceTaskAndStayOnSameStep_thenAdvanceAfterPassingSecondChance() {
+        String userId = facade.createUser("test@mail.com");
+
+        facade.handleTask(userId, StepName.PERSONAL_DETAILS, TaskName.PERSONAL_DETAILS, validPersonal());
+
+        facade.handleTask(userId, StepName.IQ_TEST, TaskName.IQ_TEST, validIQ(70));
+
+        UserProgress progress = facade.getProgress(userId);
+
+        assertEquals(UserStatus.IN_PROGRESS, progress.getStatus());
+        assertEquals(StepName.IQ_TEST, progress.getCurrentStep());
+
+        RuntimeStep iqStep = progress.getUserFlow().getSteps().stream()
+                .filter(step -> step.getName() == StepName.IQ_TEST)
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(iqStep.getTasks().contains(TaskName.SECOND_CHANCE_IQ_TEST));
+
+        facade.handleTask(
+                userId,
+                StepName.IQ_TEST,
+                TaskName.SECOND_CHANCE_IQ_TEST,
+                validSecondChanceIQ(80)
+        );
+
+        progress = facade.getProgress(userId);
+
+        assertEquals(StepName.INTERVIEW, progress.getCurrentStep());
+        assertEquals(UserStatus.IN_PROGRESS, progress.getStatus());
+    }
+
     // ======================
     // HELPERS
     // ======================
@@ -212,5 +249,9 @@ class AdmissionsControllerTest {
                 new CompleteTaskRequest(stepName, objectMapper.valueToTree(payload));
 
         taskController.completeTask(userId, taskName, request);
+    }
+
+    private SecondChanceIQRequest validSecondChanceIQ(double score) {
+        return new SecondChanceIQRequest("second-chance-test", score, Instant.now());
     }
 }

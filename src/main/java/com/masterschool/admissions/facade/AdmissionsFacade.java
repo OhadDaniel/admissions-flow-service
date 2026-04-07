@@ -15,6 +15,9 @@ import com.masterschool.admissions.runtime.UserFlow;
 import com.masterschool.admissions.task.Task;
 import com.masterschool.admissions.task.TaskFactory;
 import com.masterschool.admissions.task.TaskName;
+import com.masterschool.admissions.task.TaskEffect;
+import com.masterschool.admissions.task.TaskResult;
+import com.masterschool.admissions.task.AddTaskToCurrentStepEffect;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -89,16 +92,20 @@ public class AdmissionsFacade {
             throw new InvalidTaskOrderException("Previous tasks must be completed first");
         }
 
-        TaskStatus status = task.process(request);
+        TaskResult result = task.process(request);
+        TaskStatus taskStatus = result.status();
 
         progress.addTaskInstance(
-                new TaskInstance(task.getName(), status, request, Instant.now())
+                new TaskInstance(task.getName(), taskStatus, request, Instant.now())
         );
 
-        updateProgress(progress, currentStep, status);
+        applyEffects(currentStep, result.effects());
+
+        updateProgress(progress, currentStep, taskStatus);
 
         repository.save(progress);
-        return status;
+
+        return taskStatus;
     }
 
     /**
@@ -211,6 +218,20 @@ public class AdmissionsFacade {
         UserFlow userFlow = FlowConfig.createUserFlow();
         repository.save(new UserProgress(userId, email, userFlow));
         return userId;
+    }
+
+
+    private void applyEffects(RuntimeStep currentStep, java.util.List<TaskEffect> effects) {
+        for (TaskEffect effect : effects) {
+            if (effect instanceof AddTaskToCurrentStepEffect addTaskEffect) {
+                boolean alreadyExists = currentStep.getTasks().stream()
+                        .anyMatch(taskName -> taskName == addTaskEffect.taskName());
+
+                if (!alreadyExists) {
+                    currentStep.addTask(addTaskEffect.taskName());
+                }
+            }
+        }
     }
 
 

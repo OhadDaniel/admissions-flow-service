@@ -13,11 +13,10 @@ import com.masterschool.admissions.dto.PerformInterviewRequest;
 public class PerformInterviewTask implements Task<PerformInterviewRequest> {
 
     @Override
-    public TaskStatus process(PerformInterviewRequest request) {
-
+    public TaskResult process(PerformInterviewRequest request) {
         return "passed_interview".equals(request.decision())
-                ? TaskStatus.PASSED
-                : TaskStatus.FAILED;
+                ? TaskResult.of(TaskStatus.PASSED)
+                : TaskResult.of(TaskStatus.FAILED);
     }
 
     @Override

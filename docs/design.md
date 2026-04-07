@@ -61,6 +61,8 @@ graph TD
     AdmissionsFacade --> UserProgressRepository
     AdmissionsFacade --> TaskFactory
     TaskFactory --> Tasks
+    Tasks --> TaskResult
+    TaskResult --> TaskEffect
     AdmissionsFacade --> UserProgress
     UserProgress --> UserFlow
     UserFlow --> RuntimeStep
@@ -121,15 +123,16 @@ For every task completion request, the facade performs the following:
 4. verify that the request step matches the user's current runtime step
 5. verify that the requested task belongs to that step
 6. verify that previous tasks in the same step were already completed
-7. execute the task through the `TaskFactory`
-8. record the resulting `TaskInstance`
-9. either:
-  - reject the user if the task failed
-  - stay on the current step if the step is not complete yet
-  - advance to the next runtime step if the step is complete
-  - accept the user if the final step was completed
+7. resolve and execute the task through the `TaskFactory`
+8. store a `TaskInstance` using the task-level status from the returned `TaskResult`
+9. apply any `TaskEffect`s returned by the task
+10. either:
+- reject the user if the task failed
+- stay on the current step if the step is not complete yet
+- advance to the next runtime step if the step is complete
+- accept the user if the final step was completed
 
-This gives the system deterministic behavior and strict control over flow progression.
+This gives the system deterministic behavior and strict control over flow progression, while keeping product-specific branching logic out of the facade itself.
 
 ---
 
@@ -184,18 +187,26 @@ This improves extensibility:
 
 ## Task Execution Model
 
-Each task encapsulates its own business rule and returns a `TaskStatus`.
+Each task encapsulates its own business rule and returns a `TaskResult`.
 
-Examples:
-- `IQ_TEST` passes only if the score is above the threshold
-- `PERFORM_INTERVIEW` passes only if the decision is `passed_interview`
-- payment and similar tasks pass on successful completion payload
+A `TaskResult` contains:
+- a **task-level status** (`TaskStatus`)
+- a list of **task effects** (`TaskEffect`)
 
-Task implementations are resolved through `TaskFactory`, which keeps orchestration code independent from concrete task classes.
+This is an important design improvement.
+
+Instead of forcing every product-specific scenario into the facade, a task can now describe:
+- the outcome of its own evaluation
+- any additional system-level effect that should be applied
+
+For example, a task may:
+- pass without effects
+- fail without effects
+- pass and request that another task be added to the current runtime step
 
 This keeps responsibilities clean:
-- the facade decides **when** a task may run
-- the task itself decides **how** it is evaluated
+- the task decides **what happened**
+- the facade decides **how to apply the resulting effects to system state**
 
 ---
 
@@ -212,6 +223,31 @@ The general validation split is:
 - **Task layer** – task-specific business evaluation
 
 ---
+## TaskResult and TaskEffect
+
+### TaskResult
+
+`TaskResult` is a value object returned by every task.
+
+It replaces the earlier model in which a task returned only a `TaskStatus`.
+
+The benefit is that task execution can now express more than just pass/fail.  
+It can also communicate structured side effects to the orchestration layer.
+
+### TaskEffect
+
+`TaskEffect` is a marker abstraction for effects produced by tasks and applied by the facade.
+
+A task effect represents a declarative instruction such as:
+- add a task to the current step
+- insert a runtime step
+- apply some future flow modification
+
+This design keeps the facade generic.  
+It does not need to hardcode every business scenario.  
+Instead, it applies effects in a structured way.
+
+This is the main mechanism that improves adaptability without turning the facade into a large conditional coordinator.
 
 ## Main Design Patterns Used
 
@@ -222,7 +258,10 @@ The general validation split is:
 `TaskFactory` resolves task implementations by `TaskName`. This avoids hard-coding concrete task classes inside orchestration code.
 
 ### Strategy
-Each task implementation behaves like a strategy: it receives a typed payload and decides whether that task passed or failed based on its own logic.
+Each task implementation behaves like a strategy: it receives a typed payload and decides how that task should be evaluated.
+
+### Value Object
+`TaskResult` is modeled as a value object representing the output of task execution in a structured and immutable way.
 
 ### Composition Root
 `AdmissionsSystemBuilder` and `AppConfig` are responsible for wiring the system together. This keeps object creation separate from business behavior.
@@ -231,62 +270,6 @@ Each task implementation behaves like a strategy: it receives a typed payload an
 
 ## Extensibility
 
-<<<<<<< HEAD
-### Adding a New Task
-
-Adding a new task requires extending multiple layers of the system:
-
-1. **Define a DTO**
-   - Create a request object representing the task input
-   - Add validation logic if needed
-
-2. **Implement the Task**
-   - Create a class implementing `Task<T>`
-   - Implement the `process` method with the business logic
-
-3. **Register the Task**
-   - Add a new value to the `TaskName` enum
-   - Register the task in the `TaskFactory`
-
-4. **Expose via API**
-   - Add an endpoint in the controller (or use the generic task execution endpoint)
-
-5. **Attach to Flow**
-   - Add the task to the appropriate step in the flow definition
-
-This design ensures that tasks remain modular while being fully integrated into the system's flow and API.
-
-### Adding a New Step
-
-Adding a new step requires defining it within the flow configuration and associating it with its tasks:
-
-1. **Define the Step**
-   - Create a new step with a unique `StepName`
-   - Assign an ordered list of tasks that belong to the step
-
-2. **Update the Flow Definition**
-   - Add the new step to the flow sequence in `FlowConfig`
-   - Ensure the step is positioned correctly in the order
-
-3. **Attach Tasks**
-   - Each task must already be implemented and registered
-   - Tasks define the execution logic, while the step defines their grouping and order
-
-The flow execution logic remains unchanged, as it is fully driven by the configuration.
-
-### Modifying the Flow
-
-The flow structure can be modified by updating the configuration in `FlowConfig`:
-
-- Reorder steps to change the progression sequence
-- Add or remove steps
-- Adjust the tasks within each step
-
-Since the system's execution logic is driven entirely by the flow definition, 
-no changes are required in the core orchestration (Facade) or task implementations.
-
-This allows the system to evolve without introducing coupling or modifying existing logic.
-=======
 The design supports several kinds of future changes with limited impact:
 
 ### Add a New Task
@@ -299,17 +282,20 @@ Usually requires:
 
 ### Change Task Order Inside a Step
 Update the ordered task list in the runtime step configuration.
->>>>>>> dfd7b0b (Refactor admissions flow and add per-user runtime flow)
 
 ### Add or Remove a Step
 Update the runtime flow creation logic in `FlowConfig`.
 
-### Add Conditional or User-Specific Steps
-The current architecture already supports this at the model level because each user owns a `UserFlow`. A future change can insert or modify steps for a specific user without redesigning the system.
+### Add Task-Specific Flow Effects
+If a task needs to influence runtime flow behavior, it can return a `TaskResult` with one or more `TaskEffect`s, instead of pushing product-specific conditions directly into the facade.
 
-This is one of the main reasons for introducing `UserFlow` and `RuntimeStep`.
+This is one of the main design points for keeping the orchestration layer stable as requirements evolve.
 
----
+### Add Conditional or User-Specific Flow Changes
+The current architecture already supports this at the model level because each user owns a `UserFlow`.  
+Combined with `TaskEffect`, this provides a clean direction for future branching logic without redesigning the system around hardcoded transitions.
+
+
 
 ## Tradeoffs
 
@@ -341,6 +327,14 @@ Using `TaskName` and `StepName` improves type safety and avoids fragile string-b
 
 Tradeoff:
 - adding new tasks still requires code changes rather than pure configuration
+
+### Generic Effects Model
+Using `TaskResult` and `TaskEffect` makes the system more adaptable and reduces pressure on the facade.
+
+Tradeoff:
+- it introduces one more abstraction layer
+- it is more powerful than the original assignment strictly requires
+- it needs discipline so effects remain declarative and do not become a second orchestration layer
 
 Given the assignment scope, this was a reasonable balance between flexibility and clarity.
 

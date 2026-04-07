@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.PaymentRequest;
 public class PaymentTask implements Task<PaymentRequest> {
 
     @Override
-    public TaskStatus process(PaymentRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(PaymentRequest request) {
+        return TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override

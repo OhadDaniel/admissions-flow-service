@@ -8,7 +8,6 @@ package com.masterschool.admissions.domain;
  * FAILED    - The task was completed but did not meet its criteria.
  */
 public enum TaskStatus {
-    PENDING,
     PASSED,
     FAILED
 }

@@ -27,6 +27,7 @@ public class TaskFactoryBuilder {
 
         tasks.put(TaskName.PERSONAL_DETAILS, new PersonalDetailsTask());
         tasks.put(TaskName.IQ_TEST, new IQTask());
+        tasks.put(TaskName.SECOND_CHANCE_IQ_TEST, new SecondChanceIQTask());
         tasks.put(TaskName.SCHEDULE_INTERVIEW, new ScheduleInterviewTask());
         tasks.put(TaskName.PERFORM_INTERVIEW, new PerformInterviewTask());
         tasks.put(TaskName.UPLOAD_IDENTIFICATION, new UploadIdentificationTask());

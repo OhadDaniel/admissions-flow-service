@@ -11,8 +11,8 @@ import com.masterschool.admissions.dto.PersonalDetailsRequest;
 public class PersonalDetailsTask implements Task<PersonalDetailsRequest> {
 
     @Override
-    public TaskStatus process(PersonalDetailsRequest request) {
-        return TaskStatus.PASSED;
+    public TaskResult process(PersonalDetailsRequest request) {
+        return TaskResult.of(TaskStatus.PASSED);
     }
 
     @Override
